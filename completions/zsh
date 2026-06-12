@@ -34,6 +34,8 @@ _pacman_opts_common=(
 	'--makepkgconf[makepkg.conf file to use]:config file:_files'
 	'--nomakepkgconf[Use the default makepkg.conf]'
 	'--completioninterval[Time in days to refresh completion cache]:number'
+	'--aurcooldown[Hold back AUR upgrades modified within the last N days]:number'
+	'--dangerously-skip-cooldown[Exempt a package from --aurcooldown]:package'
 	'--confirm[Always ask for confirmation]'
 	'--debug[Display debug messages]'
 	'--gpgdir[Set an alternate directory for GnuPG (instead of /etc/pacman.d/gnupg)]: :_files -/'

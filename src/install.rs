@@ -21,7 +21,7 @@ use crate::fmt::{print_indent, print_install, print_install_verbose};
 use crate::keys::check_pgp_keys;
 use crate::pkgbuild::PkgbuildRepo;
 use crate::resolver::{flags, resolver};
-use crate::upgrade::{get_upgrades, Upgrades};
+use crate::upgrade::{cooldown_days_left, get_upgrades, Upgrades};
 use crate::util::{ask, repo_aur_pkgs, split_repo_aur_targets};
 use crate::{args, exec, news, print_error, printtr, repo};
 
@@ -1067,6 +1067,64 @@ impl Installer {
         aur_targets.is_empty() && upgrades.aur_keep.is_empty() && upgrades.pkgbuild_keep.is_empty()
     }
 
+    /// Warn about AUR packages in the build that are still within the configured
+    /// cooldown window (their AUR metadata was updated recently). Unlike the
+    /// upgrade path there's no older version to hold back to, so for explicit
+    /// installs we warn and, when interactive, ask whether to continue. Returns
+    /// false only if the user declines. A cooldown of 0 disables this; packages
+    /// in `cooldown_skip` are exempt; `--noconfirm` warns but does not block.
+    fn cooldown_gate(&self, config: &Config, actions: &Actions) -> bool {
+        if config.aur_cooldown == 0 {
+            return true;
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        let c = config.color;
+        let mut found = false;
+
+        for pkg in actions.iter_aur_pkgs() {
+            if config.cooldown_skip.iter().any(|p| *p == pkg.pkg.name) {
+                continue;
+            }
+            let Some(days) = cooldown_days_left(pkg.pkg.last_modified, now, config.aur_cooldown)
+            else {
+                continue;
+            };
+            found = true;
+
+            let msg = if pkg.target {
+                tr!(
+                    "{pkg} ({version}) is within the {cooldown} day cooldown, {days} day(s) left",
+                    pkg = pkg.pkg.name,
+                    version = pkg.pkg.version,
+                    cooldown = config.aur_cooldown,
+                    days = days,
+                )
+            } else {
+                tr!(
+                    "dependency {pkg} ({version}) is within the {cooldown} day cooldown, {days} day(s) left",
+                    pkg = pkg.pkg.name,
+                    version = pkg.pkg.version,
+                    cooldown = config.aur_cooldown,
+                    days = days,
+                )
+            };
+            eprintln!("{} {}", c.warning.paint(tr!("warning:")), msg);
+        }
+
+        if !found || config.no_confirm {
+            // --noconfirm honours the user's non-interactive choice; the warning
+            // above is still printed. The upgrade path holds these back anyway.
+            return true;
+        }
+
+        ask(
+            config,
+            &tr!("Some packages are still in their cooldown period. Install anyway?"),
+            false,
+        )
+    }
+
     async fn prepare_build(
         &mut self,
         config: &Config,
@@ -1119,6 +1177,10 @@ impl Installer {
         } else {
             false
         };
+
+        if !self.cooldown_gate(config, actions) {
+            return Status::err(1);
+        }
 
         if !config.skip_review && actions.iter_aur_pkgs().next().is_some() {
             if !ask(config, &tr!("Proceed to review?"), true) {

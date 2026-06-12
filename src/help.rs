@@ -56,6 +56,8 @@ pub fn help() {
     printtr!("    --fmflags   <flags>    Pass arguments to file manager");
     println!();
     printtr!("    --completioninterval   <n> Time in days to refresh completion cache");
+    printtr!("    --aurcooldown <n>      Hold back AUR upgrades modified within the last <n> days");
+    printtr!("    --dangerously-skip-cooldown <pkg> Exempt a package from --aurcooldown");
     printtr!("    --sortby    <field>    Sort AUR results by a specific field during search");
     printtr!("    --searchby  <field>    Search for packages using a specified field");
     printtr!("    --limit     <limit>    Limits the number of items returned in a search");

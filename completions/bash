@@ -71,6 +71,7 @@ _paru() {
 
            repo aur aururl clonedir makepkg mflags pacman pacman-conf git gitflags sudo sudoflags
            asp gpg gpgflags fm fmflags chrootflags pager completioninterval sortby searchby limit
+           aurcooldown dangerously-skip-cooldown
            upgrademenu removemake noremovemake cleanafter nocleanafter rebuild rebuildall norebuild
            rebuildtree redownload noredownload redownloadall pgpfetch nopgpfetch useask
            nouseask savechanges nosavechanges failfast nofailfast keepsrc nokeepsrc combinedupgrade

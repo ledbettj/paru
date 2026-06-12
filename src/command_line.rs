@@ -211,6 +211,14 @@ impl Config {
                     .parse()
                     .map_err(|_| anyhow!("option {} must be a number", arg))?
             }
+            Arg::Long("aurcooldown") => {
+                self.aur_cooldown = value?
+                    .parse()
+                    .map_err(|_| anyhow!("option {} must be a number", arg))?
+            }
+            Arg::Long("dangerously-skip-cooldown") => self
+                .cooldown_skip
+                .extend(value?.split(',').map(|s| s.to_string())),
             Arg::Long("sortby") => self.sort_by = ConfigEnum::from_str(argkey, value?)?,
             Arg::Long("searchby") => self.search_by = ConfigEnum::from_str(argkey, value?)?,
             Arg::Long("limit") => self.limit = value?.parse()?,
@@ -417,6 +425,8 @@ fn takes_value(arg: Arg) -> TakesValue {
         Arg::Long("chrootpkgs") => TakesValue::Required,
         Arg::Long("rootchrootpkgs") => TakesValue::Required,
         Arg::Long("completioninterval") => TakesValue::Required,
+        Arg::Long("aurcooldown") => TakesValue::Required,
+        Arg::Long("dangerously-skip-cooldown") => TakesValue::Required,
         Arg::Long("sortby") => TakesValue::Required,
         Arg::Long("searchby") => TakesValue::Required,
         Arg::Long("limit") => TakesValue::Required,

@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use alpm::{AlpmList, Db};
 use alpm_utils::DbListExt;
 use anyhow::Result;
-use aur_depends::{Resolver, Updates};
+use aur_depends::{AurUpdate, Resolver, Updates};
 use futures::try_join;
 use tr::tr;
 
@@ -228,6 +228,8 @@ pub async fn get_upgrades<'a, 'b>(
     devel_upgrades.dedup();
     // TODO better devel pkgbuild
     aur_upgrades.retain(|u| !devel_upgrades.iter().any(|t| t.pkg == u.remote.name));
+
+    cooldown_filter(config, &mut aur_upgrades);
 
     let mut repo_skip = Vec::new();
     let mut repo_keep = Vec::new();
@@ -467,6 +469,59 @@ pub async fn get_upgrades<'a, 'b>(
     Ok(upgrades)
 }
 
+/// Hold back AUR upgrades whose AUR `last_modified` is newer than the configured
+/// cooldown. This gives the community time to catch a malicious or broken update
+/// before it lands on this machine. Held-back packages stay at their current
+/// version and a warning is printed for each one. A cooldown of 0 disables this.
+fn cooldown_filter(config: &Config, aur_upgrades: &mut Vec<AurUpdate>) {
+    if config.aur_cooldown == 0 {
+        return;
+    }
+
+    let now = chrono::Utc::now().timestamp();
+
+    aur_upgrades.retain(|pkg| {
+        if config.cooldown_skip.iter().any(|p| *p == pkg.remote.name) {
+            return true;
+        }
+
+        match cooldown_days_left(pkg.remote.last_modified, now, config.aur_cooldown) {
+            None => true,
+            Some(days_left) => {
+                eprintln!(
+                    "{} {}",
+                    config.color.warning.paint(tr!("warning:")),
+                    tr!(
+                        "{pkg}: holding back upgrade ({old} => {new}), {days} day(s) left in cooldown",
+                        pkg = pkg.local.name(),
+                        old = pkg.local.version(),
+                        new = pkg.remote.version,
+                        days = days_left,
+                    )
+                );
+                false
+            }
+        }
+    });
+}
+
+/// Returns how many whole days of cooldown remain for a package last modified at
+/// `last_modified`, given the current time `now` and a `cooldown` window in days.
+/// Returns `None` once the package is older than the cooldown (i.e. installable).
+/// The remaining time is rounded up so "less than a day left" reports as 1.
+pub(crate) fn cooldown_days_left(last_modified: i64, now: i64, cooldown: u64) -> Option<u64> {
+    const DAY: i64 = 24 * 60 * 60;
+    let cooldown_secs = cooldown as i64 * DAY;
+    let age = now - last_modified;
+    if age >= cooldown_secs {
+        None
+    } else {
+        // age can be negative if last_modified is in the future; clamp to 0.
+        let remaining = (cooldown_secs - age.max(0)).min(cooldown_secs);
+        Some(((remaining + DAY - 1) / DAY) as u64)
+    }
+}
+
 fn db_len(name: &str, repo_name: &str, aurdbs: AlpmList<&Db>) -> usize {
     name.len()
         + aurdbs
@@ -475,4 +530,47 @@ fn db_len(name: &str, repo_name: &str, aurdbs: AlpmList<&Db>) -> usize {
             .and_then(|pkg| pkg.db())
             .map(|db| db.name().len() + repo_name.len() + 1)
             .unwrap_or(repo_name.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cooldown_days_left;
+
+    const DAY: i64 = 24 * 60 * 60;
+    const NOW: i64 = 1_000 * DAY;
+
+    #[test]
+    fn cooldown_disabled_never_holds() {
+        // cooldown of 0 means the window is empty, so nothing is ever held back.
+        assert_eq!(cooldown_days_left(NOW, NOW, 0), None);
+    }
+
+    #[test]
+    fn old_package_is_installable() {
+        // Modified 10 days ago with a 7 day cooldown -> past the window.
+        assert_eq!(cooldown_days_left(NOW - 10 * DAY, NOW, 7), None);
+    }
+
+    #[test]
+    fn package_exactly_at_window_is_installable() {
+        assert_eq!(cooldown_days_left(NOW - 7 * DAY, NOW, 7), None);
+    }
+
+    #[test]
+    fn fresh_package_holds_full_window() {
+        // Just modified -> the whole cooldown remains.
+        assert_eq!(cooldown_days_left(NOW, NOW, 7), Some(7));
+    }
+
+    #[test]
+    fn partial_day_rounds_up() {
+        // Modified 6.5 days ago, 7 day cooldown -> 0.5 days left, reported as 1.
+        assert_eq!(cooldown_days_left(NOW - 6 * DAY - DAY / 2, NOW, 7), Some(1));
+    }
+
+    #[test]
+    fn future_timestamp_holds_full_window() {
+        // A maintainer with a clock ahead shouldn't bypass the cooldown.
+        assert_eq!(cooldown_days_left(NOW + 3 * DAY, NOW, 7), Some(7));
+    }
 }

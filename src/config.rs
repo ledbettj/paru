@@ -441,6 +441,14 @@ pub struct Config {
     #[default = 7]
     pub completion_interval: u64,
 
+    // Hold back AUR package upgrades whose last_modified is newer than this many
+    // days. 0 disables the feature. Mitigates supply-chain attacks by giving the
+    // community time to flag a malicious update before it lands on this machine.
+    pub aur_cooldown: u64,
+    // Package names exempt from the AurCooldown hold-back. Named "dangerously"
+    // because exempting a package forfeits the supply-chain protection for it.
+    pub cooldown_skip: Vec<String>,
+
     pub help: bool,
     pub version: bool,
 
@@ -1116,6 +1124,11 @@ then initialise it with:
             "SearchBy" => self.search_by = ConfigEnum::from_str(key, value?.as_str())?,
             "Limit" => self.limit = value?.parse()?,
             "CompletionInterval" => self.completion_interval = value?.parse()?,
+            "AurCooldown" => self.aur_cooldown = value?.parse()?,
+            "DangerouslySkipCooldown" => {
+                self.cooldown_skip
+                    .extend(value?.split_whitespace().map(|s| s.to_string()));
+            }
             "PacmanConf" => self.pacman_conf = Some(value?),
             "MakepkgConf" => self.makepkg_conf = Some(value?),
             "DevelSuffixes" => {

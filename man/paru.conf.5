@@ -223,6 +223,23 @@ cache to be refreshed every time, while setting this to -1 will cause the cache
 to never be refreshed. Defaults to 7.
 
 .TP
+.B AurCooldown = N
+Hold back AUR package upgrades whose last modification on the AUR was less than
+N days ago. During a sysupgrade the package stays at its currently installed
+version and a warning is printed until the cooldown elapses. During an explicit
+install (\fB\-S\fR), where there is no older version to fall back to, paru
+instead prints a warning and prompts before continuing. This mitigates
+supply-chain attacks by giving the community time to flag a malicious or broken
+update before it is installed. Defaults to 0 (disabled).
+
+.TP
+.B DangerouslySkipCooldown = pkg1 pkg2 ...
+A space-separated list of package names that are exempt from
+.B AurCooldown
+and will be upgraded immediately. Named "dangerously" because exempting a
+package forfeits the cooldown's supply-chain protection for it.
+
+.TP
 .B PacmanConf = path/to/pacman.conf
 The pacman config file to use.
 
